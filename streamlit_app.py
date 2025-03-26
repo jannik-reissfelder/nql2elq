@@ -8,18 +8,10 @@ import json
 import pandas as pd
 import streamlit as st
 from typing import Dict, List, Any, Tuple
-from openai import OpenAI
 
-# Import functions from nlq2elq_app.py
-from nlq2elq_app import (
-    extract_search_parameters,
-    extract_location_parameters,
-    prepare_template_params,
-    execute_template_search,
+# Import functions from nlq2elastic.py
+from nlq2elastic import (
     natural_language_to_elasticsearch_query,
-    explain_query,
-    register_template,
-    enhance_query
 )
 
 # Set page configuration
@@ -39,8 +31,60 @@ st.markdown("""
     .stButton>button {
         width: 100%;
     }
+    @keyframes pulse {
+        0% { opacity: 0.3; }
+        50% { opacity: 1; }
+        100% { opacity: 0.3; }
+    }
+    .loading-animation {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #1E88E5;
+        margin: 20px 0;
+        text-align: center;
+    }
+    .loading-animation span {
+        display: inline-block;
+        animation: pulse 1.5s infinite;
+        margin-right: 0.2rem;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+def create_loading_animation(container):
+    """Create a continuous loading animation that keeps moving until cleared"""
+    message = "Discovering your market"
+    html = '<div class="loading-animation">'
+    
+    # Add each word with proper spacing
+    words = message.split()
+    for i, word in enumerate(words):
+        # Add each letter with its own animation delay
+        for j, char in enumerate(word):
+            delay = (i * len(word) + j) * 0.1
+            html += f'<span style="animation-delay: {delay}s;">{char}</span>'
+        
+        # Add space between words (if not the last word)
+        if i < len(words) - 1:
+            html += '<span>&nbsp;</span>'
+    
+    # Add animated dots at the end
+    for i in range(3):
+        delay = (len(message) + i) * 0.1
+        html += f'<span style="animation-delay: {delay}s;">.</span>'
+        
+    html += '</div>'
+    return container.markdown(html, unsafe_allow_html=True)
+
+def animated_text(text, container):
+    """Display text with a sequential letter animation"""
+    html = '<div class="animated-text">'
+    for i, char in enumerate(text):
+        # Add increasing delay for each character
+        delay = i * 0.1
+        html += f'<span style="animation-delay: {delay}s;">{char}</span>'
+    html += '</div>'
+    container.markdown(html, unsafe_allow_html=True)
 
 def main():
     """Main Streamlit application"""
@@ -60,27 +104,14 @@ def main():
         else:
             st.success("OpenAI API key is configured")
         
-        # Query enhancement option
-        st.subheader("Search Options")
-        enhance_search = st.checkbox("Enhance Search Query", value=True, 
-                                    help="Use AI to expand your query with industry-specific keywords")
-        
         # Template registration
         st.subheader("Search Template")
-        if st.button("Register Search Template"):
-            with st.spinner("Registering template..."):
-                try:
-                    success = register_template()
-                    if success:
-                        st.success("Template registered successfully!")
-                    else:
-                        st.error("Failed to register template.")
-                except Exception as e:
-                    st.error(f"Error registering template: {str(e)}")
+        create_template = st.checkbox("Create/Update Template", value=False, 
+                                    help="Create or update the Elasticsearch template (only needed once or when template changes)")
         
         # Information about location extraction
-        st.subheader("Location Extraction")
-        st.info("The application now automatically extracts location information from your query using advanced natural language processing.")
+        st.subheader("About")
+        st.info("This application converts natural language queries to Elasticsearch parameters and extracts location information automatically.")
     
     # Main content area
     col1, col2 = st.columns([2, 1])
@@ -101,64 +132,71 @@ def main():
                 st.error("Please enter your OpenAI API key in the sidebar first.")
             else:
                 try:
-                    with st.spinner("Processing query..."):
-                        # Use the new integrated workflow
-                        results_df, params, total_count = natural_language_to_elasticsearch_query(query)
-                        
-                        # Store results in session state
-                        st.session_state.results_df = results_df
-                        st.session_state.params = params
-                        st.session_state.total_count = total_count
-                        st.session_state.query = query
-                        
-                        # Extract location information for display
-                        location_params = extract_location_parameters(query)
-                        st.session_state.location_params = location_params
-                        
-                        # Display filter verification
-                        if results_df.empty:
-                            st.warning("No results found for your query.")
+                    # Create a placeholder for the animated text
+                    loading_placeholder = st.empty()
+                    
+                    # Display continuous animation
+                    create_loading_animation(loading_placeholder)
+                    
+                    # Process the query
+                    results_df, params, total_count, enhancement_details = natural_language_to_elasticsearch_query(
+                        query, 
+                        create_template=create_template
+                    )
+                    
+                    # Clear the loading animation
+                    loading_placeholder.empty()
+                    
+                    # Store results in session state
+                    st.session_state.results_df = results_df
+                    st.session_state.params = params
+                    st.session_state.total_count = total_count
+                    st.session_state.query = query
+                    st.session_state.enhancement_details = enhancement_details
+                    
+                    # Extract location parameters from the params dictionary
+                    location_params = {
+                        "country": params.get("country"),
+                        "state": params.get("state"),
+                        "region": params.get("region"),
+                        "district": params.get("district")
+                    }
+                    
+                    # Filter out None values
+                    st.session_state.location_params = {k: v for k, v in location_params.items() if v is not None}
+                    
+                    # Display filter verification
+                    if results_df.empty:
+                        st.warning("No results found for your query.")
                 except Exception as e:
                     st.error(f"Error processing query: {str(e)}")
                     st.exception(e)
     
     with col2:
-        st.subheader("Query Interpretation")
         if 'params' in st.session_state:
-            st.info(explain_query(st.session_state.params))
-            
             # Show enhancement details if available
             if 'enhancement_details' in st.session_state:
-                st.subheader("Query Enhancement")
-                
-                with st.expander("View enhancement details", expanded=True):
+                with st.expander("View Query Enhancement Details", expanded=False):
                     st.markdown(st.session_state.enhancement_details)
             
-            # Show extracted location information
-            if 'location_params' in st.session_state:
-                st.subheader("Extracted Location")
-                location_info = st.session_state.location_params
-                
-                # Create a clean display of location information
-                location_display = {}
-                for key, value in location_info.items():
-                    if value is not None and key != 'location':
-                        location_display[key] = value
-                
-                if location_display:
-                    st.json(location_display)
-                else:
-                    st.info("No location information detected in query.")
-            
             # Display filter groups with visual tags
-            st.subheader("Filter Groups")
+            st.subheader("Extracted Parameters")
+            
+            # Location Parameters - Orange tags
+            if st.session_state.get('location_params'):
+                st.markdown("**Location Parameters**")
+                tags_html = ""
+                for key, value in st.session_state.location_params.items():
+                    if value:
+                        tags_html += f'<span style="background-color: #fd7e14; color: white; padding: 0.3rem 0.6rem; margin: 0.2rem; border-radius: 1rem; display: inline-block;">{key.capitalize()}: {value}</span>'
+                st.markdown(f'<div style="margin-bottom: 1rem;">{tags_html}</div>', unsafe_allow_html=True)
             
             # Must Include All - Green tags
             if st.session_state.params.get("must_include_all"):
                 st.markdown("**Must Have All**")
                 tags_html = ""
                 for term in st.session_state.params["must_include_all"]:
-                    tags_html += f'<span style="background-color: #28a745; color: white; padding: 0.3rem 0.6rem; margin: 0.2rem; border-radius: 1rem; display: inline-block;">{term} <span style="font-weight: bold;">×</span></span>'
+                    tags_html += f'<span style="background-color: #28a745; color: white; padding: 0.3rem 0.6rem; margin: 0.2rem; border-radius: 1rem; display: inline-block;">{term}</span>'
                 st.markdown(f'<div style="margin-bottom: 1rem;">{tags_html}</div>', unsafe_allow_html=True)
             
             # Must Include At Least One - Blue tags
@@ -166,7 +204,7 @@ def main():
                 st.markdown("**Must Have at least One**")
                 tags_html = ""
                 for term in st.session_state.params["must_atleast_one_of"]:
-                    tags_html += f'<span style="background-color: #17a2b8; color: white; padding: 0.3rem 0.6rem; margin: 0.2rem; border-radius: 1rem; display: inline-block;">{term} <span style="font-weight: bold;">×</span></span>'
+                    tags_html += f'<span style="background-color: #17a2b8; color: white; padding: 0.3rem 0.6rem; margin: 0.2rem; border-radius: 1rem; display: inline-block;">{term}</span>'
                 st.markdown(f'<div style="margin-bottom: 1rem;">{tags_html}</div>', unsafe_allow_html=True)
             
             # Must Not Include - Red tags
@@ -174,13 +212,8 @@ def main():
                 st.markdown("**Must Not Include**")
                 tags_html = ""
                 for term in st.session_state.params["must_not_include"]:
-                    tags_html += f'<span style="background-color: #dc3545; color: white; padding: 0.3rem 0.6rem; margin: 0.2rem; border-radius: 1rem; display: inline-block;">{term} <span style="font-weight: bold;">×</span></span>'
+                    tags_html += f'<span style="background-color: #dc3545; color: white; padding: 0.3rem 0.6rem; margin: 0.2rem; border-radius: 1rem; display: inline-block;">{term}</span>'
                 st.markdown(f'<div style="margin-bottom: 1rem;">{tags_html}</div>', unsafe_allow_html=True)
-            
-            # Add a dummy text input for additional keywords (for visual similarity to the image)
-            st.markdown('<div style="margin-top: 1rem; margin-bottom: 1rem; opacity: 0.6;">', unsafe_allow_html=True)
-            st.text_input("Add optional keywords", "", key="dummy_keywords", disabled=True)
-            st.markdown('</div>', unsafe_allow_html=True)
             
             # Show raw parameters in expandable section
             with st.expander("View Raw Parameters"):

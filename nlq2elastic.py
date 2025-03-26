@@ -40,32 +40,6 @@ except Exception as e:
 # Initialize shared OpenAI client
 openai_client = AsyncOpenAI()
 
-def register_template():
-    """Register the search template with Elasticsearch"""
-    try:
-        # Delete the template if it already exists
-        try:
-            es.delete_script(id=TEMPLATE_ID)
-            print(f"Deleted existing template: {TEMPLATE_ID}")
-        except Exception as e:
-            # Template doesn't exist yet, which is fine
-            pass
-        
-        # Register the template
-        es.put_script(id=TEMPLATE_ID, body=SEARCH_TEMPLATE)
-        print(f"Created search template: {TEMPLATE_ID}")
-        
-        # Verify the template was registered
-        template = es.get_script(id=TEMPLATE_ID)
-        if template:
-            return True
-        else:
-            return False
-    
-    except Exception as e:
-        print(f"Error registering template: {e}")
-        return False
-
 async def extract_search_parameters_async(query: str) -> Dict[str, Any]:
     """
     Extract structured search parameters from a natural language query using OpenAI function calling.
