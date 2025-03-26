@@ -89,7 +89,31 @@ def run_agent(query):
             "district": None
         }
 
+async def run_agent_async(query: str) -> dict:
+    """
+    Asynchronous version of the location extraction agent.
+    
+    Args:
+        query: The natural language query to extract location from
+        
+    Returns:
+        A dictionary with location parameters
+    """
+    llm = ChatOpenAI(temperature=0, model="gpt-4o")
+    
+    chain = (
+        {"query": RunnablePassthrough()} 
+        | PromptTemplate.from_template(location_prompt.template) 
+        | llm.with_structured_output(LocationSchema)
+    )
+    
+    try:
+        location_data = await chain.ainvoke({"query": query})
+        return location_data.dict()
+    except Exception as e:
+        print(f"Error extracting location parameters: {e}")
+        return {"country": None, "state": None, "region": None, "district": None}
+
 # Usage remains the same
 user_query = "Finde Unternehmen in Baden-Württemberg"
 final_result = run_agent(user_query)
-

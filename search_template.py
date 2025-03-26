@@ -23,9 +23,7 @@ SEARCH_TEMPLATE = {
             "fields": ["*"],
             "type": "best_fields"
           }
-        }
-        {{#comma}},{{/comma}}
-        {{/must_include_all}}
+        }{{#comma}},{{/comma}}{{/must_include_all}}
       ],
       "should": [
         {{#must_atleast_one_of}}
@@ -35,9 +33,7 @@ SEARCH_TEMPLATE = {
             "fields": ["*"],
             "type": "best_fields"
           }
-        }
-        {{#comma}},{{/comma}}
-        {{/must_atleast_one_of}}
+        }{{#comma}},{{/comma}}{{/must_atleast_one_of}}
       ],
       "must_not": [
         {{#must_not_include}}
@@ -47,9 +43,7 @@ SEARCH_TEMPLATE = {
             "fields": ["*"],
             "type": "best_fields"
           }
-        }
-        {{#comma}},{{/comma}}
-        {{/must_not_include}}
+        }{{#comma}},{{/comma}}{{/must_not_include}}
       ],
       "filter": [
         {{#filters}}
@@ -57,9 +51,7 @@ SEARCH_TEMPLATE = {
           "term": {
             "{{field}}": "{{value}}"
           }
-        }
-        {{#comma}},{{/comma}}
-        {{/filters}}
+        }{{#comma}},{{/comma}}{{/filters}}
       ]
     }
   },
@@ -222,7 +214,7 @@ def prepare_template_params(params: Dict[str, Any]) -> Dict[str, Any]:
     
     return template_params
 
-def execute_search(params: Dict[str, Any], use_template: bool = True) -> Tuple[pd.DataFrame, int]:
+def execute_search(params: Dict[str, Any], use_template: bool = True, create_template: bool = False) -> Tuple[pd.DataFrame, int]:
     """
     Execute a search using either search template or direct query.
     
@@ -237,14 +229,15 @@ def execute_search(params: Dict[str, Any], use_template: bool = True) -> Tuple[p
                     "size": 100
                 }
         use_template: Whether to use the search template (True) or direct query (False)
+        create_template: Whether to create/update the template before searching (default: False)
         
     Returns:
         Tuple of (search results as DataFrame, total count)
     """
     try:
-        # Ensure size parameter exists
+        # Ensure size parameter exists - set to 10000 by default to return more results
         if "size" not in params:
-            params["size"] = 100
+            params["size"] = 10000  # Elasticsearch's default max is 10000
             
         # Print the exact parameters being used for debugging
         print("\n=== SEARCH PARAMETERS ===")
@@ -255,8 +248,9 @@ def execute_search(params: Dict[str, Any], use_template: bool = True) -> Tuple[p
         es = init_elastic_client()
         
         if use_template:
-            # Register or update the template
-            register_search_template(es, force_overwrite=True)
+            # Register or update the template only if requested
+            if create_template:
+                register_search_template(es, force_overwrite=True)
             
             # Prepare parameters for the template
             template_params = prepare_template_params(params)
