@@ -12,7 +12,11 @@ from typing import Dict, List, Any, Tuple
 # Import functions from nlq2elastic.py
 from nlq2elastic import (
     natural_language_to_elasticsearch_query,
+    prepare_template_params
 )
+
+# Import functions from search_template.py for direct search execution
+from search_template import execute_search
 
 # Set page configuration
 st.set_page_config(
@@ -85,6 +89,120 @@ def animated_text(text, container):
         html += f'<span style="animation-delay: {delay}s;">{char}</span>'
     html += '</div>'
     container.markdown(html, unsafe_allow_html=True)
+
+def render_editable_parameters():
+    """
+    Create a simple UI for editing search parameters using standard Streamlit components
+    """
+    st.subheader("Edit Parameters")
+    
+    # Must include parameters (multiselect)
+    if "must_include_all" in st.session_state.working_params:
+        selected_must = st.multiselect(
+            "Must include ALL of these terms:",
+            options=st.session_state.working_params["must_include_all"] + st.session_state.working_params.get("must_atleast_one_of", []) + st.session_state.working_params.get("must_not_include", []),
+            default=st.session_state.working_params["must_include_all"],
+            key="edit_must_include"
+        )
+        st.session_state.working_params["must_include_all"] = selected_must
+    
+    # Must include at least one parameters (multiselect)
+    if "must_atleast_one_of" in st.session_state.working_params:
+        selected_atleast = st.multiselect(
+            "Must include AT LEAST ONE of these terms:",
+            options=st.session_state.working_params["must_atleast_one_of"] + st.session_state.working_params.get("must_include_all", []) + st.session_state.working_params.get("must_not_include", []),
+            default=st.session_state.working_params["must_atleast_one_of"],
+            key="edit_must_atleast"
+        )
+        st.session_state.working_params["must_atleast_one_of"] = selected_atleast
+    
+    # Must not include parameters (multiselect)
+    if "must_not_include" in st.session_state.working_params:
+        selected_mustnot = st.multiselect(
+            "Must NOT include these terms:",
+            options=st.session_state.working_params["must_not_include"] + st.session_state.working_params.get("must_include_all", []) + st.session_state.working_params.get("must_atleast_one_of", []),
+            default=st.session_state.working_params["must_not_include"],
+            key="edit_must_not"
+        )
+        st.session_state.working_params["must_not_include"] = selected_mustnot
+    
+    # Location parameters (multiselect for easier removal)
+    st.markdown("**Location Parameters**")
+    
+    # Country selection
+    if st.session_state.working_params.get("country"):
+        countries = [st.session_state.working_params["country"]]
+        selected_country = st.multiselect(
+            "Country:",
+            options=countries,
+            default=countries,
+            key="edit_country_select"
+        )
+        st.session_state.working_params["country"] = selected_country[0] if selected_country else None
+    
+    # State selection
+    if st.session_state.working_params.get("state"):
+        states = [st.session_state.working_params["state"]]
+        selected_state = st.multiselect(
+            "State:",
+            options=states,
+            default=states,
+            key="edit_state_select"
+        )
+        st.session_state.working_params["state"] = selected_state[0] if selected_state else None
+    
+    # Region selection
+    if st.session_state.working_params.get("region"):
+        regions = [st.session_state.working_params["region"]]
+        selected_region = st.multiselect(
+            "Region:",
+            options=regions,
+            default=regions,
+            key="edit_region_select"
+        )
+        st.session_state.working_params["region"] = selected_region[0] if selected_region else None
+    
+    # District selection
+    if st.session_state.working_params.get("district"):
+        districts = [st.session_state.working_params["district"]]
+        selected_district = st.multiselect(
+            "District:",
+            options=districts,
+            default=districts,
+            key="edit_district_select"
+        )
+        st.session_state.working_params["district"] = selected_district[0] if selected_district else None
+    
+    # Button to update search
+    if st.button("Update Search", type="primary"):
+        update_search_with_modified_params()
+
+def update_search_with_modified_params():
+    """
+    Execute a search using the modified parameters without reprocessing the natural language query
+    """
+    try:
+        # Convert parameters to template format
+        template_params = prepare_template_params(st.session_state.working_params)
+        
+        # Execute search with modified parameters
+        results_df, total_count = execute_search(
+            template_params, 
+            use_template=True,
+            create_template=False  # Use existing template
+        )
+        
+        # Update results in session state
+        st.session_state.results_df = results_df
+        st.session_state.total_count = total_count
+        
+        # Update display message
+        st.session_state.search_message = f"🔍 Found {total_count} results with modified parameters"
+        
+        return True
+    except Exception as e:
+        st.error(f"Error updating search: {str(e)}")
+        return False
 
 def main():
     """Main Streamlit application"""
@@ -165,6 +283,9 @@ def main():
                     # Filter out None values
                     st.session_state.location_params = {k: v for k, v in location_params.items() if v is not None}
                     
+                    # Initialize working parameters
+                    st.session_state.working_params = params.copy()
+                    
                     # Display filter verification
                     if results_df.empty:
                         st.warning("No results found for your query.")
@@ -179,45 +300,12 @@ def main():
                 with st.expander("View Query Enhancement Details", expanded=False):
                     st.markdown(st.session_state.enhancement_details)
             
-            # Display filter groups with visual tags
-            st.subheader("Extracted Parameters")
-            
-            # Location Parameters - Orange tags
-            if st.session_state.get('location_params'):
-                st.markdown("**Location Parameters**")
-                tags_html = ""
-                for key, value in st.session_state.location_params.items():
-                    if value:
-                        tags_html += f'<span style="background-color: #fd7e14; color: white; padding: 0.3rem 0.6rem; margin: 0.2rem; border-radius: 1rem; display: inline-block;">{key.capitalize()}: {value}</span>'
-                st.markdown(f'<div style="margin-bottom: 1rem;">{tags_html}</div>', unsafe_allow_html=True)
-            
-            # Must Include All - Green tags
-            if st.session_state.params.get("must_include_all"):
-                st.markdown("**Must Have All**")
-                tags_html = ""
-                for term in st.session_state.params["must_include_all"]:
-                    tags_html += f'<span style="background-color: #28a745; color: white; padding: 0.3rem 0.6rem; margin: 0.2rem; border-radius: 1rem; display: inline-block;">{term}</span>'
-                st.markdown(f'<div style="margin-bottom: 1rem;">{tags_html}</div>', unsafe_allow_html=True)
-            
-            # Must Include At Least One - Blue tags
-            if st.session_state.params.get("must_atleast_one_of"):
-                st.markdown("**Must Have at least One**")
-                tags_html = ""
-                for term in st.session_state.params["must_atleast_one_of"]:
-                    tags_html += f'<span style="background-color: #17a2b8; color: white; padding: 0.3rem 0.6rem; margin: 0.2rem; border-radius: 1rem; display: inline-block;">{term}</span>'
-                st.markdown(f'<div style="margin-bottom: 1rem;">{tags_html}</div>', unsafe_allow_html=True)
-            
-            # Must Not Include - Red tags
-            if st.session_state.params.get("must_not_include"):
-                st.markdown("**Must Not Include**")
-                tags_html = ""
-                for term in st.session_state.params["must_not_include"]:
-                    tags_html += f'<span style="background-color: #dc3545; color: white; padding: 0.3rem 0.6rem; margin: 0.2rem; border-radius: 1rem; display: inline-block;">{term}</span>'
-                st.markdown(f'<div style="margin-bottom: 1rem;">{tags_html}</div>', unsafe_allow_html=True)
-            
-            # Show raw parameters in expandable section
+            # Only keep the raw parameters view
             with st.expander("View Raw Parameters"):
                 st.json(st.session_state.params)
+            
+            # Editable parameters
+            render_editable_parameters()
     
     # Results section (full width)
     if 'results_df' in st.session_state:
