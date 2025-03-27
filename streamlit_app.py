@@ -128,6 +128,17 @@ def render_editable_parameters():
     # Location parameters (multiselect for easier removal)
     st.markdown("**Location Parameters**")
     
+    # Continent selection
+    if st.session_state.working_params.get("continent"):
+        continents = [st.session_state.working_params["continent"]]
+        selected_continent = st.multiselect(
+            "Continent:",
+            options=continents,
+            default=continents,
+            key="edit_continent_select"
+        )
+        st.session_state.working_params["continent"] = selected_continent[0] if selected_continent else None
+    
     # Country selection
     if st.session_state.working_params.get("country"):
         countries = [st.session_state.working_params["country"]]
@@ -283,6 +294,7 @@ def main():
                     
                     # Extract location parameters from the params dictionary
                     location_params = {
+                        "continent": params.get("continent"),
                         "country": params.get("country"),
                         "state": params.get("state"),
                         "region": params.get("region"),

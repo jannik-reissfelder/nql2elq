@@ -129,7 +129,7 @@ async def extract_location_parameters_async(query: str) -> Dict[str, Any]:
         return location_data
     except Exception as e:
         print(f"Error extracting location parameters: {e}")
-        return {"country": None, "state": None, "region": None, "district": None}
+        return {"country": None, "state": None, "region": None, "district": None, "continent": None}
 
 async def enhance_query_async(query: str) -> str:
     """
@@ -218,6 +218,13 @@ def prepare_template_params(params: Dict[str, Any]) -> Dict[str, Any]:
     
     # Add geographic filters to the filters array
     filters = []
+    
+    # Add continent filter if provided
+    if params.get("continent"):
+        filters.append({
+            "field": "continent.keyword",
+            "value": params["continent"]
+        })
     
     # Add country filter if provided
     if params.get("country"):
@@ -349,6 +356,7 @@ async def natural_language_to_elasticsearch_query_async(query: str, create_templ
         # Combine parameters
         params = {
             **keyword_params,
+            "continent": location_params.get("continent"),
             "country": location_params.get("country"),
             "state": location_params.get("state"),
             "region": location_params.get("region"),
@@ -431,6 +439,9 @@ def explain_query(params: Dict[str, Any]) -> str:
         explanation += ". "
     
     # Add geographic filters
+    if params.get("continent"):
+        explanation += f"Located in continent: {params['continent']}. "
+    
     if params.get("country"):
         explanation += f"Located in country: {params['country']}. "
     
