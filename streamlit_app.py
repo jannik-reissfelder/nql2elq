@@ -55,9 +55,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def create_loading_animation(container):
+def create_loading_animation(container, message="Discovering your market"):
     """Create a continuous loading animation that keeps moving until cleared"""
-    message = "Discovering your market"
     html = '<div class="loading-animation">'
     
     # Add each word with proper spacing
@@ -250,16 +249,26 @@ def main():
                 st.error("Please enter your OpenAI API key in the sidebar first.")
             else:
                 try:
+                    # Initialize processing stage
+                    st.session_state.processing_stage = "Discovering your market..."
+                    
                     # Create a placeholder for the animated text
                     loading_placeholder = st.empty()
                     
-                    # Display continuous animation
-                    create_loading_animation(loading_placeholder)
+                    # Display initial animation
+                    create_loading_animation(loading_placeholder, st.session_state.processing_stage)
                     
-                    # Process the query
+                    # Define progress callback function
+                    def update_progress(message):
+                        st.session_state.processing_stage = message
+                        # Update the loading animation with the new message
+                        create_loading_animation(loading_placeholder, message)
+                    
+                    # Process the query with progress updates
                     results_df, params, total_count, enhancement_details = natural_language_to_elasticsearch_query(
                         query, 
-                        create_template=create_template
+                        create_template=create_template,
+                        progress_callback=update_progress
                     )
                     
                     # Clear the loading animation
@@ -308,19 +317,61 @@ def main():
             render_editable_parameters()
     
     # Results section (full width)
-    if 'results_df' in st.session_state:
+    if 'results_df' in st.session_state and st.session_state.results_df is not None:
         st.markdown("---")
         st.subheader(f"Search Results ({st.session_state.total_count} total)")
         
         if not st.session_state.results_df.empty:
+            # Add column selector
+            available_columns = st.session_state.results_df.columns.tolist()
+            
+            # Initialize selected columns in session state if not already present
+            if 'selected_columns' not in st.session_state:
+                # Use the user's preferred default columns
+                preferred_columns = ["domain", "continent", "country", "state", "region"]
+                # Filter to only include columns that actually exist in the DataFrame
+                default_columns = [col for col in preferred_columns if col in available_columns]
+                
+                # If none of the preferred columns exist, fall back to the first few columns
+                if not default_columns and available_columns:
+                    default_columns = available_columns[:5]  # First 5 columns
+                
+                st.session_state.selected_columns = default_columns
+            
+            # Column selector UI
+            col_select, col_reset = st.columns([3, 1])
+            
+            with col_select:
+                selected_columns = st.multiselect(
+                    "Select columns to display:",
+                    options=available_columns,
+                    default=st.session_state.selected_columns,
+                    key="column_selector"
+                )
+                st.session_state.selected_columns = selected_columns
+            
+            with col_reset:
+                # Add a reset button to restore all columns
+                if st.button("Show All Columns", key="reset_columns"):
+                    st.session_state.selected_columns = available_columns
+                    # Force rerun to update the multiselect
+                    st.rerun()
+            
+            # Only show selected columns or all if none selected
+            display_df = st.session_state.results_df
+            if st.session_state.selected_columns:
+                valid_columns = [col for col in st.session_state.selected_columns if col in display_df.columns]
+                if valid_columns:
+                    display_df = display_df[valid_columns]
+            
             # Allow sorting and filtering
             st.dataframe(
-                st.session_state.results_df,
-                use_container_width=True,
-                height=400
+                display_df,
+                height=500,
+                use_container_width=True
             )
         else:
-            st.info("No results found for your query.")
+            st.info("No matching results found.")
 
 # Run the Streamlit app
 if __name__ == "__main__":

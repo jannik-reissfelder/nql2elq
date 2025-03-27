@@ -7,7 +7,7 @@ to Elasticsearch queries using a search template.
 import os
 import json
 import pandas as pd
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Dict, List, Any, Tuple, Optional, Callable
 import asyncio
 from openai import AsyncOpenAI
 
@@ -304,28 +304,45 @@ def execute_template_search(template_params: Dict[str, Any], create_template: bo
         traceback.print_exc()
         return [], 0
 
-async def natural_language_to_elasticsearch_query_async(query: str, create_template: bool = False) -> Tuple[pd.DataFrame, Dict[str, Any], int, str]:
+async def natural_language_to_elasticsearch_query_async(query: str, create_template: bool = False, progress_callback: Optional[Callable[[str], None]] = None) -> Tuple[pd.DataFrame, Dict[str, Any], int, str]:
     """
     Convert a natural language query to an Elasticsearch query and execute it with parallel processing.
     
     Args:
         query: The natural language query to convert
         create_template: Whether to create/update the Elasticsearch template (default: False)
+        progress_callback: Optional callback function to report progress
         
     Returns:
         Tuple of (results DataFrame, extracted parameters, total count, enhancement details)
     """
     try:
+        # Initial progress update
+        if progress_callback:
+            progress_callback("Discovering your market...")
+            
         # Create async tasks for operations that can run in parallel
         enhance_task = asyncio.create_task(enhance_query_async(query))
         location_task = asyncio.create_task(extract_location_parameters_async(query))
         
+        # Update progress after initiating tasks
+        if progress_callback:
+            progress_callback("Understanding your market...")
+            
         # Await the enhancement result
         enhancement_details = await enhance_task
         
+        # Update progress before keyword extraction
+        if progress_callback:
+            progress_callback("Analyzing keywords...")
+            
         # Start keyword extraction (depends on enhancement_details)
         keyword_params = await extract_search_parameters_async(enhancement_details)
         
+        # Update progress before location processing
+        if progress_callback:
+            progress_callback("Processing location data...")
+            
         # Get location parameters
         location_params = await location_task
         
@@ -338,6 +355,10 @@ async def natural_language_to_elasticsearch_query_async(query: str, create_templ
             "district": location_params.get("district")
         }
         
+        # Update progress before search execution
+        if progress_callback:
+            progress_callback("Fetching your market results...")
+            
         # Continue with existing flow
         template_params = prepare_template_params(params)
         results, total_count = execute_template_search(template_params, create_template=create_template)
@@ -362,7 +383,7 @@ async def natural_language_to_elasticsearch_query_async(query: str, create_templ
         # Return empty results
         return pd.DataFrame(), {}, 0, f"Error: {e}"
 
-def natural_language_to_elasticsearch_query(query: str, create_template: bool = False) -> Tuple[pd.DataFrame, Dict[str, Any], int, str]:
+def natural_language_to_elasticsearch_query(query: str, create_template: bool = False, progress_callback: Optional[Callable[[str], None]] = None) -> Tuple[pd.DataFrame, Dict[str, Any], int, str]:
     """
     Convert a natural language query to an Elasticsearch query and execute it.
     This function uses the async implementation for better performance.
@@ -370,11 +391,12 @@ def natural_language_to_elasticsearch_query(query: str, create_template: bool = 
     Args:
         query: The natural language query to convert
         create_template: Whether to create/update the Elasticsearch template (default: False)
+        progress_callback: Optional callback function to report progress
         
     Returns:
         Tuple of (results DataFrame, extracted parameters, total count, enhancement details)
     """
-    return asyncio.run(natural_language_to_elasticsearch_query_async(query, create_template=create_template))
+    return asyncio.run(natural_language_to_elasticsearch_query_async(query, create_template=create_template, progress_callback=progress_callback))
 
 def explain_query(params: Dict[str, Any]) -> str:
     """
