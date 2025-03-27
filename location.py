@@ -27,24 +27,27 @@ location_prompt = PromptTemplate(
         "When processing the query, consider that users might be vague, have spelling errors, or provide incomplete information. "
         "Use your best judgment to extract the intended location along with any available geographical hints. "
         "If a field is not clearly provided, return its value as null. \n\n"
-        "Return the result as a JSON object with the keys: 'location', 'continent', 'country', 'state', 'region', and 'district'. "
+        "IMPORTANT: If the query does not mention any location at all, set location_requested to false and all location fields to null. "
+        "Only set location_requested to true if the user is specifically asking about companies or entities in a particular location. \n\n"
+        "Return the result as a JSON object with the keys: 'location_requested', 'continent', 'country', 'state', 'region', and 'district'. "
         "Ensure that the 'continent' and 'country' are always in English, and the other keys are returned in the native language as found in the dataset. \n\n"
         "Examples:\n"
         "1. Input: 'Show me all companies in München'\n"
-        "   Expected Output: {{\"location\": \"München\", \"continent\": \"Europe\", \"country\": \"Germany\", \"state\": \"Bayern\", \"region\": München, \"district\": null}}\n\n"
+        "   Expected Output: {{\"location_requested\": true, \"continent\": \"Europe\", \"country\": \"Germany\", \"state\": \"Bayern\", \"region\": \"München\", \"district\": null}}\n\n"
         "2. Input: 'Liste des entreprises à Moulins'\n"
-        "   Expected Output: {{\"location\": \"Moulins\", \"continent\": \"Europe\", \"country\": \"France\", \"state\": \"Auvergne-Rhône-Alpes\", \"region\": \"Allier\", \"district\": null}}\n\n"
+        "   Expected Output: {{\"location_requested\": true, \"continent\": \"Europe\", \"country\": \"France\", \"state\": \"Auvergne-Rhône-Alpes\", \"region\": \"Allier\", \"district\": null}}\n\n"
         "3. Input: 'Find businesses in Batdâmbâng'\n"
-        "   Expected Output: {{\"location\": \"Batdâmbâng\", \"continent\": \"Asia\", \"country\": \"Cambodia\", \"state\": null, \"region\": null, \"district\": null}}\n\n"
+        "   Expected Output: {{\"location_requested\": true, \"continent\": \"Asia\", \"country\": \"Cambodia\", \"state\": null, \"region\": null, \"district\": null}}\n\n"
+        "4. Input: 'Which companies specialize in warehouse automation and robotics?'\n"
+        "   Expected Output: {{\"location_requested\": false, \"continent\": null, \"country\": null, \"state\": null, \"region\": null, \"district\": null}}\n\n"
         "Query: {query}\n"
-        "Output example: {{\"location\": \"Mannheim\", \"continent\": \"Europe\", \"country\": \"Germany\", \"state\": \"Baden-Württemberg\", \"region\": Mannheim, \"district\": null}}"
         "Please only give back the dictionary, no additional explanations needed"
     )"""
 )
 
 # Define structured output schema using Pydantic
 class LocationSchema(BaseModel):
-    location: str = Field(description="Primary location name from query")
+    location_requested: bool = Field(description="Whether the query specifically requests information about a location")
     continent: str = Field(description="Continent name in English. Valid answers are North America, South America, Europe, Asia, Africa, Antarctica, Australia, and Oceania", default=None)
     country: str = Field(description="Country name in English", default=None)
     state: str = Field(description="State/province in native language", default=None)
@@ -75,7 +78,7 @@ def run_agent(query):
         result = runnable_chain.invoke({"query": query})
 
         return {
-            "location": result.location,
+            "location_requested": result.location_requested,
             "continent": result.continent,
             "country": result.country,
             "state": result.state,
@@ -84,7 +87,7 @@ def run_agent(query):
         }
     except json.JSONDecodeError:
         return {
-            "location": query.strip(),
+            "location_requested": False,
             "continent": None,
             "country": None,
             "state": None,
@@ -115,7 +118,15 @@ async def run_agent_async(query: str) -> dict:
         return location_data.dict()
     except Exception as e:
         print(f"Error extracting location parameters: {e}")
-        return {"continent": None, "country": None, "state": None, "region": None, "district": None}
+        return {"location_requested": False, "continent": None, "country": None, "state": None, "region": None, "district": None}
+
+def extract_location_parameters(query):
+    try:
+        location_data = run_agent(query)
+        return location_data
+    except Exception as e:
+        print(f"Error extracting location parameters: {e}")
+        return {"location_requested": False, "continent": None, "country": None, "state": None, "region": None, "district": None}
 
 # Usage remains the same
 user_query = "Finde Unternehmen in Baden-Württemberg"

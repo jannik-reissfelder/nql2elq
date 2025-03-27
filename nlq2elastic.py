@@ -353,15 +353,21 @@ async def natural_language_to_elasticsearch_query_async(query: str, create_templ
         # Get location parameters
         location_params = await location_task
         
-        # Combine parameters
+        # Combine parameters - only include location params if location was requested
         params = {
             **keyword_params,
-            "continent": location_params.get("continent"),
-            "country": location_params.get("country"),
-            "state": location_params.get("state"),
-            "region": location_params.get("region"),
-            "district": location_params.get("district")
         }
+        
+        # Only add location parameters if a location was actually requested
+        if location_params.get("location_requested"):
+            print("########Location requested true:##########", location_params.get("location_requested"))
+            params.update({
+                "continent": location_params.get("continent"),
+                "country": location_params.get("country"),
+                "state": location_params.get("state"),
+                "region": location_params.get("region"),
+                "district": location_params.get("district")
+            })
         
         # Update progress before search execution
         if progress_callback:

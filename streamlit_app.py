@@ -293,13 +293,18 @@ def main():
                     st.session_state.enhancement_details = enhancement_details
                     
                     # Extract location parameters from the params dictionary
-                    location_params = {
-                        "continent": params.get("continent"),
-                        "country": params.get("country"),
-                        "state": params.get("state"),
-                        "region": params.get("region"),
-                        "district": params.get("district")
-                    }
+                    location_params = {}
+                    
+                    # Only include location parameters if they exist in params
+                    # This respects the location_requested flag from the backend
+                    if any(param in params for param in ["continent", "country", "state", "region", "district"]):
+                        location_params = {
+                            "continent": params.get("continent"),
+                            "country": params.get("country"),
+                            "state": params.get("state"),
+                            "region": params.get("region"),
+                            "district": params.get("district")
+                        }
                     
                     # Filter out None values
                     st.session_state.location_params = {k: v for k, v in location_params.items() if v is not None}
